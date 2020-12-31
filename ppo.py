@@ -18,7 +18,7 @@ class Memory():
 
         self.n_states = len(self.state)
         batch_st = np.arange(0, self.n_states, self.batch_size)
-        idx = np.arange(batch_st)
+        idx = np.arange(self.n_states, dtype=np.int16)
         np.random.shuffle(idx)
 
         batches = [idx[i:i+self.batch_size] for i in batch_st]
@@ -63,6 +63,7 @@ class Agent():
 
     def take_action(self,state):
         state = torch.tensor([state], dtype=torch.float).to(self.actor.device)
+        
         prob_dist = self.actor(state)
         value = self.critic(state)
         action = prob_dist.sample()
@@ -76,9 +77,9 @@ class Agent():
         self.memory.store_memory(state, action, reward, val, prob, done)
 
     def train(self):
-        epochs = 10
+        epochs = 5
 
-        for epoch in range(1,epochs):
+        for epoch in range(epochs):
             state_mem, action_mem, reward_mem, val_mem, prob_mem, done_mem, batches = self.memory.get_memory()
             
             # Calcualte the advantage

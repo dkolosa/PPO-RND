@@ -38,7 +38,7 @@ class Critic(torch.nn.Module):
         self.nam_state = num_state
         self.layer_1 = layer_1
         self.layer_2 = layer_2
-        self.chkpt = checkpt + '_actor.ckpt'
+        self.chkpt = checkpt + '_critic.ckpt'
 
         self.model = nn.Sequential(
             nn.Linear(*num_state,layer_1),

@@ -49,7 +49,7 @@ class Memory():
         
 
 class Agent():
-    def __init__(self, num_state, num_action, ep=0.2, beta=3, c1=0.1, layer_1_nodes=512, layer_2_nodes=256, batch_size=64):
+    def __init__(self, num_state, num_action, ep=0.2, beta=3, c1=0.1, layer_1_nodes=512, layer_2_nodes=256, batch_size=64,save_dir='models'):
         
         self.ep = ep
         self.beta = beta
@@ -60,6 +60,8 @@ class Agent():
         self.actor = Actor(num_state, num_action, layer_1_nodes, layer_2_nodes)
         self.critic = Critic(num_state, layer_1_nodes, layer_2_nodes)
         self.memory = Memory(batch_size)
+
+        self.save_dir = save_dir
 
     def take_action(self,state):
         state = torch.tensor([state], dtype=torch.float).to(self.actor.device)
@@ -124,6 +126,8 @@ class Agent():
                 self.critic.optim.step()
 
         self.memory.clear_memory()
+        self.actor.save_model(self.save_dir)
+        self.critic.save_model(self.save_dir)
 
         
 

@@ -27,8 +27,8 @@ class Actor(torch.nn.Module):
         pol = self.model(state)
         return Categorical(pol)
 
-    def save_model(self):
-        torch.save(self.state_dict(), self.chkpt)
+    def save_model(self, save_dir):
+        torch.save(self.state_dict(), save_dir+'/'+self.chkpt)
 
 
 class Critic(torch.nn.Module):
@@ -56,5 +56,5 @@ class Critic(torch.nn.Module):
         Val = self.model(state)
         return Val
 
-    def save_model(self):
-        torch.save(self.state_dict(), self.chkpt)
+    def save_model(self, save_dir):
+        torch.save(self.state_dict(),save_dir+'/'+self.chkpt)

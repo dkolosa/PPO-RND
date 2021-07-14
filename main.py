@@ -12,11 +12,10 @@ def main():
 
     ENV = 'LunarLander-v2'
 
-    # os.makedirs(os.path.join(os.getcwd(), 'models'), exist_ok=True)
-    # model_dir = os.path.join(os.getcwd(), 'models')
-    # os.makedirs(os.path.join(model_dir, str(datetime.date.today()) + '-' + ENV), exist_ok=True)
-    # save_dir = os.path.join(model_dir, str(datetime.date.today()) + '-' + ENV)
-
+    os.makedirs(os.path.join(os.getcwd(), 'models'), exist_ok=True)
+    model_dir = os.path.join(os.getcwd(), 'models')
+    # save_dir = os.path.join(model_dir)
+    save_dir = model_dir
     env = gym.make(ENV)
     iter_per_episode = 200
     n_state = env.observation_space.shape
@@ -33,7 +32,7 @@ def main():
 
     GAMMA = 0.99
 
-    ppo = Agent(n_state, n_action,layer_1_nodes=layer_1_nodes,layer_2_nodes=layer_2_nodes, batch_size=batch_size)
+    ppo = Agent(n_state, n_action,layer_1_nodes=layer_1_nodes,layer_2_nodes=layer_2_nodes, batch_size=batch_size, save_dir=save_dir)
     n_steps = 0
     M = 10
     score = []
@@ -43,7 +42,7 @@ def main():
         done = False
 
         while not done:       
-            # env.render()     
+            env.render()     
             prob, action, value = ppo.take_action(s)
             s_1, reward, done, _ = env.step(action)
             n_steps += 1

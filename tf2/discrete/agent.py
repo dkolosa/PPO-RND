@@ -1,27 +1,147 @@
-import os
-from typing import Tuple
-
-import tensorflow as tf
 import numpy as np
+import tensorflow.python as tf
+from tensorflow.python.keras.optimizers import Adam
+from tensorflow_probability.python.distributions import Categorical
+from model import ActorCritic
 
+class Memory():
+    def __init__(self,batch_size):
+        # init state, action, reward, state_, done
+        self.state = []
+        self.action = []
+        self.reward = []
+        self.val = []
+        self.prob = []
+        self.done = []
+        self.batch_size = batch_size
+
+    def get_memory(self):
+
+        self.n_states = len(self.state)
+        batch_st = np.arange(0, self.n_states, self.batch_size)
+        idx = np.arange(self.n_states, dtype=np.int16)
+        np.random.shuffle(idx)
+
+        batches = [idx[i:i+self.batch_size] for i in batch_st]
+
+        return np.array(self.state),\
+            np.array(self.action),\
+            np.array(self.reward),\
+            np.array(self.val),\
+            np.array(self.prob),\
+            np.array(self.done),\
+            batches
+        
+    def store_memory(self, state, action, reward, val, prob, done):
+        self.state.append(state)
+        self.action.append(action)
+        self.reward.append(reward)
+        self.val.append(val)
+        self.prob.append(prob)
+        self.done.append(done)
+
+    def clear_memory(self):
+        self.state.clear()
+        self.action.clear()
+        self.reward.clear()
+        self.val.clear()
+        self.prob.clear()
+        self.done.clear()
+        
 
 class Agent():
+    def __init__(self, num_state, num_action, ep=0.2, beta=3, c1=0.1, layer_1_nodes=512, layer_2_nodes=256, batch_size=64,save_dir='models'):
+        
+        self.ep = ep
+        self.beta = beta
+        self.c1 = c1
+        self.gamma = .99
+        self.g_lambda = 0.95
 
-    def __init__(self) -> None:
-        pass
+        # self.actor = Actor(num_state, num_action, layer_1_nodes, layer_2_nodes)
+        # self.critic = Critic(num_state, layer_1_nodes, layer_2_nodes)
 
+        self.model = ActorCritic(num_state, num_action)
 
-    def get_action(self) -> Tuple[tf.Tensor]:
-        pass
+        self.act_opt = Adam(0.0001)
+        self.crit_opt = Adam(0.0001)
 
-    def get_transitions(self) -> Tuple[np.ndarray]:
-        pass
+        self.memory = Memory(batch_size)
 
-    def train(self) -> None:
-        pass
+        self.save_dir = save_dir
 
-    def save(self) -> None:
-        pass
+    def take_action(self,state):
+        state = tf.tensor([state])
+        
+        # prob_dist = self.actor(state)
+        # value = self.critic(state)
 
-    def load(self) -> None:
-        pass
+        prob_dist, value = self.model(state)
+
+        prob_dist = tfp.distributions.Categorical()
+        
+        action = prob_dist.sample()
+
+        prob = tf.squeeze(prob_dist.log_prob(action))
+        action = tf.squeeze(action)
+        value = tf.squeeze(value)
+
+        return prob, action, value
+
+    def store_memory(self, state,action, prob, val, reward, done):
+        self.memory.store_memory(state, action, reward, val, prob, done)
+
+    def train(self):
+        epochs = 5
+
+        for epoch in range(epochs):
+            state_mem, action_mem, reward_mem, val_mem, prob_mem, done_mem, batches = self.memory.get_memory()
+            
+            # Calcualte the advantage
+            advan = np.zeros(len(reward_mem))
+
+            for T in range(len(reward_mem)-1):
+                a_t = 0
+                discount = 1
+                for k in range(T, len(reward_mem)-1):
+                    a_t += discount * (reward_mem[k] + self.gamma * val_mem[k+1]*(1-done_mem[k]) \
+                        - val_mem[k])
+                    discount *= self.gamma * self.g_lambda
+                advan[T] = a_t 
+            advan = tf.tensor(advan)
+            values = tf.tensor(val_mem)
+            
+            for batch in batches:
+
+                states = tf.tensor(state_mem[batch])
+                old_prob = tf.tensor(prob_mem[batch])
+                actions = tf.tensor(action_mem[batch])
+                with tf.GradientTape() as tape:
+                    # calculate r_t(theta)
+                    dist_new = self.actor(states)
+                    prob_new = dist_new.log_prob(actions)
+                    r_t = prob_new.exp() / old_prob.exp()        
+                    # L_clip
+                    prob_clip = tf.clip_by_value(r_t, 1-self.ep, 1+self.ep) * advan[batch]
+                    weight_prob = advan[batch] * r_t
+                    actor_loss = -tf.reduce_mean(tf.minimum(weight_prob, prob_clip))
+
+                    # critic loss
+                    V_t = tf.squeeze(self.critic(states))
+                    V_t1 = advan[batch] + values[batch]
+                    critic_loss = (V_t1 - V_t)**2
+                    critic_loss = tf.reduce_mean(critic_loss)
+
+                    tot_loss = actor_loss + self.c1*critic_loss
+                
+                actor_params = self.
+            
+            self.actor.optim.zero_grad()
+            self.critic.optim.zero_grad()
+            tot_loss.backward()
+            self.actor.optim.step()
+            self.critic.optim.step()
+
+        self.memory.clear_memory()
+        self.actor.save_model(self.save_dir)
+        self.critic.save_model(self.save_dir)

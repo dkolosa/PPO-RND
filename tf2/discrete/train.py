@@ -16,19 +16,19 @@ def main():
 
     os.makedirs(os.path.join(os.getcwd(), 'models'), exist_ok=True)
     model_dir = os.path.join(os.getcwd(), 'models')
-    # save_dir = os.path.join(model_dir)
-    save_dir = model_dir
-    env = gym.make(ENV)
+    save_dir = os.path.join(model_dir)
+    # save_dir = model_dir
+    env = gym.make(ENVS[0])
     iter_per_episode = 200
     n_state = env.observation_space.shape
-    n_action = env.action_space.n
+    n_action = env.action_space.shape[0]
 
     env.seed(1234)
     np.random.seed(1234)
 
     num_episodes = 1001
 
-    batch_size = 12
+    batch_size = 24
     #Pendulum
     layer_1_nodes, layer_2_nodes = 256, 200
 
@@ -44,8 +44,11 @@ def main():
         done = False
 
         while not done:       
-            env.render()     
+            # env.render()     
             prob, action, value = ppo.take_action(s)
+            prob = prob.numpy()[0]
+            action = action.numpy()[0]
+            value = value.numpy()
             s_1, reward, done, _ = env.step(action)
             n_steps += 1
             r += reward

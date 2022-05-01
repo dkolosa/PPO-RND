@@ -1,7 +1,8 @@
+from dis import dis
 import numpy as np
-import tensorflow.python as tf
-from tensorflow.python.keras.optimizers import Adam
-from tensorflow_probability.python.distributions import Categorical
+import tensorflow as tf
+from tensorflow.keras.optimizers import Adam
+from tensorflow_probability import distributions
 from model import ActorCritic
 
 class Memory():
@@ -50,55 +51,58 @@ class Memory():
         
 
 class Agent():
-    def __init__(self, num_state, num_action, ep=0.2, beta=3, c1=0.1, layer_1_nodes=512, layer_2_nodes=256, batch_size=64,save_dir='models'):
+    def __init__(self, num_state, num_actions, ep=0.2, beta=3, c1=0.1, layer_1_nodes=512, layer_2_nodes=256, batch_size=64,save_dir='models'):
         
         self.ep = ep
         self.beta = beta
         self.c1 = c1
         self.gamma = .99
         self.g_lambda = 0.95
+        self.epochs = 100
+
+        self.batch_size = batch_size
+
+        self.num_actions = num_actions
 
         # self.actor = Actor(num_state, num_action, layer_1_nodes, layer_2_nodes)
         # self.critic = Critic(num_state, layer_1_nodes, layer_2_nodes)
 
-        self.model = ActorCritic(num_state, num_action)
+        self.model = ActorCritic(num_state, num_actions)
 
-        self.act_opt = Adam(0.0001)
-        self.crit_opt = Adam(0.0001)
+        self.model.actor.compile(optimizer='adam')
+        self.model.critic.compile(optimizer='adam')
 
         self.memory = Memory(batch_size)
 
         self.save_dir = save_dir
 
+    @tf.function
     def take_action(self,state):
-        state = tf.tensor([state])
-        
-        # prob_dist = self.actor(state)
-        # value = self.critic(state)
+        state = tf.convert_to_tensor([state])
 
         prob_dist, value = self.model(state)
 
-        prob_dist = tfp.distributions.Categorical()
-        
-        action = prob_dist.sample()
+        dist = distributions.Categorical(prob_dist)
+        action = dist.sample(self.num_actions)
+        prob = dist.log_prob(action)
 
-        prob = tf.squeeze(prob_dist.log_prob(action))
-        action = tf.squeeze(action)
-        value = tf.squeeze(value)
-
-        return prob, action, value
+        return action, prob, value
 
     def store_memory(self, state,action, prob, val, reward, done):
         self.memory.store_memory(state, action, reward, val, prob, done)
 
-    def train(self):
-        epochs = 5
+    def save_model(self):
+        self.model.actor.save(self.save_dir + '_act.ckpt')
+        self.model.critic.save(self.save_dir + '_crit.ckpt')
 
-        for epoch in range(epochs):
+    def train(self):
+
+        for _ in range(self.epochs):
             state_mem, action_mem, reward_mem, val_mem, prob_mem, done_mem, batches = self.memory.get_memory()
-            
+
             # Calcualte the advantage
-            advan = np.zeros(len(reward_mem))
+            advan = np.zeros(len(reward_mem), dtype=np.float32)
+            values = val_mem
 
             for T in range(len(reward_mem)-1):
                 a_t = 0
@@ -108,40 +112,43 @@ class Agent():
                         - val_mem[k])
                     discount *= self.gamma * self.g_lambda
                 advan[T] = a_t 
-            advan = tf.tensor(advan)
-            values = tf.tensor(val_mem)
             
             for batch in batches:
+                with tf.GradientTape(persistent=True) as tape:
 
-                states = tf.tensor(state_mem[batch])
-                old_prob = tf.tensor(prob_mem[batch])
-                actions = tf.tensor(action_mem[batch])
-                with tf.GradientTape() as tape:
+                    states = tf.convert_to_tensor(state_mem[batch], dtype=tf.float32)
+                    old_prob = tf.convert_to_tensor(prob_mem[batch], dtype=tf.float32)
+                    actions = tf.convert_to_tensor(action_mem[batch], dtype=tf.float32)
+                    
                     # calculate r_t(theta)
-                    dist_new = self.actor(states)
+                    policy, value = self.model(states)
+
+                    dist_new = distributions.Categorical(policy)
                     prob_new = dist_new.log_prob(actions)
-                    r_t = prob_new.exp() / old_prob.exp()        
+
+                    value = tf.squeeze(value, 1)
+
+                    ratio = tf.math.exp(prob_new - old_prob)
+                    weight_prob = advan[batch] * ratio
+
                     # L_clip
-                    prob_clip = tf.clip_by_value(r_t, 1-self.ep, 1+self.ep) * advan[batch]
-                    weight_prob = advan[batch] * r_t
-                    actor_loss = -tf.reduce_mean(tf.minimum(weight_prob, prob_clip))
+                    prob_clip = tf.clip_by_value(ratio, 1-self.ep, 1+self.ep) * advan[batch]
+                    actor_loss = tf.reduce_mean(-tf.math.minimum(weight_prob, prob_clip))
 
                     # critic loss
-                    V_t = tf.squeeze(self.critic(states))
-                    V_t1 = advan[batch] + values[batch]
-                    critic_loss = (V_t1 - V_t)**2
-                    critic_loss = tf.reduce_mean(critic_loss)
+                    V_t1 = advan[batch] + val_mem[batch]
+                    critic_loss = tf.keras.losses.MSE(value, V_t1)
 
-                    tot_loss = actor_loss + self.c1*critic_loss
+                actor_params = self.model.actor.trainable_variables
+                critic_params = self.model.critic.trainable_variables
                 
-                actor_params = self.
-            
-            self.actor.optim.zero_grad()
-            self.critic.optim.zero_grad()
-            tot_loss.backward()
-            self.actor.optim.step()
-            self.critic.optim.step()
+                grad_act = tape.gradient(actor_loss, actor_params)
+                grad_crit = tape.gradient(critic_loss, critic_params)
+
+                self.model.actor.optimizer.apply_gradients(zip(grad_act, actor_params))
+                self.model.critic.optimizer.apply_gradients(zip(grad_crit, critic_params))
+
 
         self.memory.clear_memory()
-        self.actor.save_model(self.save_dir)
-        self.critic.save_model(self.save_dir)
+        self.save_model()
+        self.save_model()

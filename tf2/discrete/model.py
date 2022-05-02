@@ -1,7 +1,7 @@
 from typing import Tuple
 import tensorflow as tf
 import tensorflow.python.keras as keras
-from tensorflow.python.keras.layers import Dense, Conv2D, Flatten, ReLU, Softmax
+from tensorflow.python.keras.layers import Dense
 
 class ActorCritic(keras.Model):
     def __init__(self, num_inputs, num_actions) -> None:
@@ -11,20 +11,15 @@ class ActorCritic(keras.Model):
         layer_2 = 128
 
         self.actor = keras.Sequential([
-            Dense(layer_1),
-            ReLU(),
-            Dense(layer_2),
-            ReLU(),
-            Dense(num_actions),
-            Softmax()
+            Dense(layer_1, activation='relu'),
+            Dense(layer_2, activation='relu'),
+            Dense(num_actions, activation='softmax')
         ])
 
         self.critic = keras.Sequential([
-            Dense(layer_1),
-            ReLU(),
-            Dense(layer_2),
-            ReLU(),
-            Dense(1)
+            Dense(layer_1, activation='relu'),
+            Dense(layer_2, activation='relu'),
+            Dense(num_actions, activation=None)
         ])
 
     def call(self, state) -> Tuple[tf.Tensor, tf.Tensor]:

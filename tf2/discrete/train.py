@@ -4,8 +4,6 @@ import gym
 import os
 import matplotlib.pyplot as plt
 
-import tensorboard
-
 def main():
 
     #init the env
@@ -26,17 +24,17 @@ def main():
     env.seed(1234)
     np.random.seed(1234)
 
-    num_episodes = 1001
+    num_episodes = 500
 
-    batch_size = 24
-    #Pendulum
-    layer_1_nodes, layer_2_nodes = 256, 200
+    batch_size = 5
+    N=20
+
+    layer_1_nodes, layer_2_nodes = 128, 128
 
     GAMMA = 0.99
 
-    ppo = Agent(n_state, n_action,layer_1_nodes=layer_1_nodes,layer_2_nodes=layer_2_nodes, batch_size=batch_size, save_dir=save_dir)
+    ppo = Agent(n_state, n_action, layer_1_nodes=layer_1_nodes,layer_2_nodes=layer_2_nodes, batch_size=batch_size, save_dir=save_dir)
     n_steps = 0
-    M = 10
     score = []
     for i in range(num_episodes):
         s = env.reset()
@@ -44,16 +42,17 @@ def main():
         done = False
 
         while not done:       
-            # env.render()     
-            prob, action, value = ppo.take_action(s)
+            env.render()     
+            action, prob, value = ppo.take_action(s)
             prob = prob.numpy()[0]
             action = action.numpy()[0]
-            value = value.numpy()
+            value = value.numpy()[0]
+            
             s_1, reward, done, _ = env.step(action)
             n_steps += 1
             r += reward
-            ppo.store_memory(s, action, prob, value, reward, done)
-            if n_steps % M == 0:
+            ppo.store_memory(s, action, reward, value, prob, done)
+            if n_steps % N == 0:
                 ppo.train()
             s = s_1
         score.append(r)

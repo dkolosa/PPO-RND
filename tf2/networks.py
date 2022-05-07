@@ -1,5 +1,5 @@
 import tensorflow.python.keras as keras
-from tensorflow.python.keras.layers import Dense, Flatten, Conv2D
+from tensorflow.python.keras.layers import Dense, Flatten, Conv2D, Input
 
 
 class ActorCriticCNN(keras.Model):
@@ -7,26 +7,28 @@ class ActorCriticCNN(keras.Model):
         super(ActorCriticCNN, self).__init__()
 
         self.actor = keras.Sequential([
-            Conv2D(32, 8, activation='relu'),
-            Conv2D(32, 8, activation='relu'),
-            Conv2D(32, 8, activation='relu'),
+            Input(shape=(96,96,3)),
+            # Conv2D(32, 8, activation='relu'),
+            Conv2D(32, 6, activation='relu'),
+            Conv2D(32, 3, activation='relu'),
             Flatten(),
-            Dense(128, activation='tanh'),
-            Dense(128, activation='tanh'),
-            Dense(n_actions, activation='tanh')
+            Dense(128, activation='relu'),
+            # Dense(128, activation='tanh'),
+            Dense(n_actions, activation='relu')
         ])
 
         self.critic = keras.Sequential([
-            Conv2D(32, 8, activation='relu'),
-            Conv2D(32, 8, activation='relu'),
-            Conv2D(32, 8, activation='relu'),
+            # Conv2D(32, 8, activation='relu'),
+            Conv2D(32, 6, activation='relu'),
+            Conv2D(32, 3, activation='relu'),
             Flatten(),
-            Dense(128, activation='tanh'),
-            Dense(128, activation='tanh'),
+            Dense(128, activation='relu'),
+            Dense(128, activation='relu'),
             Dense(1, activation=None)
         ])
 
     def call(self, state):
+
         policy = self.actor(state)
         value = self.critic(state)
         return policy, value

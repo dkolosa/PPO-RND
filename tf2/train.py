@@ -11,7 +11,7 @@ if __name__ == '__main__':
     
     # env = gym.make('CartPole-v0')
     env = gym.make('CarRacing-v1')
-    N = 20
+    N = 10
     batch_size = 5
     n_epochs = 4
     alpha = 0.0003
@@ -38,7 +38,7 @@ if __name__ == '__main__':
         done = False
         score = 0
         while not done:
-            # env.render()
+            env.render()
             action, prob, val = agent.choose_action(observation)
             action = action.numpy()[0]
             val = val.numpy()[0]

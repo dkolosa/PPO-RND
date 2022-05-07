@@ -1,8 +1,11 @@
+import imp
 import numpy as np
 from ppo import Agent
 import gym
 import os
 import matplotlib.pyplot as plt
+import torch
+from gym.envs.box2d.car_racing import CarRacing
 
 def main():
 
@@ -10,23 +13,24 @@ def main():
     ENVS = ('Pendulum-v0', 'MountainCarContinuous-v0', 'BipedalWalker-v3', 'LunarLanderContinuous-v2',
         'BipedalWalkerHardcore-v3')
 
-    ENV = 'LunarLander-v2'
-
+    # ENV = 'LunarLander-v2'
     os.makedirs(os.path.join(os.getcwd(), 'models'), exist_ok=True)
     model_dir = os.path.join(os.getcwd(), 'models')
     # save_dir = os.path.join(model_dir)
     save_dir = model_dir
-    env = gym.make(ENV)
+    # env = gym.make(ENV)
+    env = CarRacing()
     iter_per_episode = 200
     n_state = env.observation_space.shape
-    n_action = env.action_space.n
+    n_action = env.action_space.shape[0]
+
 
     env.seed(1234)
     np.random.seed(1234)
 
     num_episodes = 1001
 
-    batch_size = 12
+    batch_size = 64
     #Pendulum
     layer_1_nodes, layer_2_nodes = 256, 200
 
@@ -41,8 +45,10 @@ def main():
         r = 0
         done = False
 
-        while not done:       
-            env.render()     
+        # while not done:
+        for _ in range(500):
+            env.render()
+            s = ppo.preprocess_image(s) / 255.0
             prob, action, value = ppo.take_action(s)
             s_1, reward, done, _ = env.step(action)
             n_steps += 1

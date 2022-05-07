@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from model import Actor, Critic
+from model import Actor, Critic, ActorCNN, CriticCNN
 
 
 class Memory():
@@ -57,23 +57,35 @@ class Agent():
         self.gamma = .99
         self.g_lambda = 0.95
 
-        self.actor = Actor(num_state, num_action, layer_1_nodes, layer_2_nodes)
-        self.critic = Critic(num_state, layer_1_nodes, layer_2_nodes)
+        # self.actor = Actor(num_state, num_action, layer_1_nodes, layer_2_nodes, contineous=True)
+        # self.critic = Critic(num_state, layer_1_nodes, layer_2_nodes, contineous=True)
+
+        self.actor = ActorCNN(num_state, num_action, layer_1_nodes, layer_2_nodes,lr=0.0001, checkpt='ppo', contineous=True)
+        self.critic = CriticCNN(num_state, layer_1_nodes, layer_2_nodes,contineous=True)
+
         self.memory = Memory(batch_size)
+
 
         self.save_dir = save_dir
 
     def take_action(self,state):
-        state = torch.tensor([state], dtype=torch.float).to(self.actor.device)
-        
-        prob_dist = self.actor(state)
-        value = self.critic(state)
-        action = prob_dist.sample()
-
-        prob = torch.squeeze(prob_dist.log_prob(action)).item()
-        action = torch.squeeze(action).item()
-        value = torch.squeeze(value).item()
+        with torch.no_grad():
+            state = torch.tensor([state], dtype=torch.float).to(self.actor.device)
+            prob_dist = self.actor(state)
+            value = self.critic(state)
+            action = prob_dist.sample()
+            # breakpoint()
+            prob = torch.squeeze(prob_dist.log_prob(action)).cpu().detach().numpy()
+            action = torch.squeeze(action).cpu().detach().numpy()
+            value = torch.squeeze(value).cpu().detach().numpy()
         return prob, action, value
+
+    def preprocess_image(self,image):
+        # pytorch image: C x H x W
+        # image = image[0:86, 0:86, 0:3]
+        image_swp = np.swapaxes(image, -1, 0)
+        image_swp = np.swapaxes(image_swp,-1, -2)
+        return image_swp/255.0
 
     def store_memory(self, state,action, prob, val, reward, done):
         self.memory.store_memory(state, action, reward, val, prob, done)
@@ -95,6 +107,7 @@ class Agent():
                         - val_mem[k])
                     discount *= self.gamma * self.g_lambda
                 advan[T] = a_t 
+
             advan = torch.tensor(advan).to(self.actor.device)
             values = torch.tensor(val_mem).to(self.actor.device)
 
@@ -108,8 +121,9 @@ class Agent():
                 prob_new = dist_new.log_prob(actions)
                 r_t = prob_new.exp() / old_prob.exp()        
                 # L_clip
-                prob_clip = torch.clamp(r_t, 1-self.ep, 1+self.ep) * advan[batch]
-                weight_prob = advan[batch] * r_t
+                # breakpoint()
+                prob_clip = torch.clamp(r_t, 1-self.ep, 1+self.ep) * torch.reshape(advan[batch], (len(batch), 1))
+                weight_prob = torch.reshape(advan[batch], (len(batch), 1)) * r_t
                 actor_loss = -torch.min(weight_prob, prob_clip).mean()
 
                 # critic loss

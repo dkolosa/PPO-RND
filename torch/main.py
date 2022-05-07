@@ -30,7 +30,7 @@ def main():
 
     num_episodes = 1001
 
-    batch_size = 64
+    batch_size = 32
     #Pendulum
     layer_1_nodes, layer_2_nodes = 256, 200
 
@@ -45,8 +45,8 @@ def main():
         r = 0
         done = False
 
-        # while not done:
-        for _ in range(500):
+        while not done:
+        # for _ in range(500):
             env.render()
             s = ppo.preprocess_image(s) / 255.0
             prob, action, value = ppo.take_action(s)
@@ -59,6 +59,7 @@ def main():
             s = s_1
         score.append(r)
         print(f'episode: {i}, reward: {r}, steps: {n_steps}')
+        ppo.save_model()
 
     plt.plot(score)
     plt.show()

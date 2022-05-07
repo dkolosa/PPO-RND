@@ -56,6 +56,7 @@ class Agent():
         self.c1 = c1
         self.gamma = .99
         self.g_lambda = 0.95
+        self.contineous = True
 
         # self.actor = Actor(num_state, num_action, layer_1_nodes, layer_2_nodes, contineous=True)
         # self.critic = Critic(num_state, layer_1_nodes, layer_2_nodes, contineous=True)
@@ -70,11 +71,14 @@ class Agent():
 
     def take_action(self,state):
         with torch.no_grad():
-            state = torch.tensor([state], dtype=torch.float).to(self.actor.device)
+            state = torch.tensor(np.array([state]), dtype=torch.float).to(self.actor.device)
             prob_dist = self.actor(state)
             value = self.critic(state)
-            action = prob_dist.sample()
-            # breakpoint()
+            if self.contineous:
+                action = prob_dist.sample()
+            else:
+                action = prob_dist.mean
+
             prob = torch.squeeze(prob_dist.log_prob(action)).cpu().detach().numpy()
             action = torch.squeeze(action).cpu().detach().numpy()
             value = torch.squeeze(value).cpu().detach().numpy()
@@ -89,6 +93,10 @@ class Agent():
 
     def store_memory(self, state,action, prob, val, reward, done):
         self.memory.store_memory(state, action, reward, val, prob, done)
+
+    def save_model(self):
+        torch.save(self.actor.state_dict(), 'models/actor.ckpt')
+        torch.save(self.critic.state_dict(), 'models/critic.ckpt')
 
     def train(self):
         epochs = 5
@@ -140,8 +148,8 @@ class Agent():
                 self.critic.optim.step()
 
         self.memory.clear_memory()
-        self.actor.save_model(self.save_dir)
-        self.critic.save_model(self.save_dir)
+        # self.actor.save_model(self.save_dir)
+        # self.critic.save_model(self.save_dir)
 
         
 

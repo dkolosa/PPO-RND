@@ -104,7 +104,7 @@ class ActorCNN(torch.nn.Module):
                 self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2)
                 self.conv3 = nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1)
                 self.flat = Flatten()
-                self.fc1 = nn.Linear(4096,layer_1)
+                self.fc1 = nn.Linear(3136,layer_1)
                 self.fc2 = nn.Linear(layer_1,layer_2)
                 self.mean = nn.Linear(layer_2, num_actions)
                 self.std = nn.Linear(layer_2, num_actions)
@@ -114,14 +114,14 @@ class ActorCNN(torch.nn.Module):
                 self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2)
                 self.conv3 = nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1)
                 self.flat = Flatten()
-                self.fc1 = nn.Linear(4096,layer_1)
+                self.fc1 = nn.Linear(3136,layer_1)
                 self.fc2 = nn.Linear(layer_1,layer_2)
                 self.mean = nn.Softmax(dim=-1)
 
         def calc_cnnweights():
-            input = torch.zeros((1, 4, 96, 96))
+            input = torch.zeros((1, 3, 86, 86))
             model = nn.Sequential(
-                nn.Conv2d(in_channels=4, out_channels=32, kernel_size=8, stride=4),
+                nn.Conv2d(in_channels=3, out_channels=32, kernel_size=8, stride=4),
                 nn.ReLU(),
                 nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=1),
                 nn.ReLU(),
@@ -138,12 +138,12 @@ class ActorCNN(torch.nn.Module):
 
     def forward(self,state):
         if self.contineous:
-            x = F.relu(self.conv1(state))
-            x = F.relu(self.conv2(x))
-            x = F.relu(self.conv3(x))
+            x = torch.relu(self.conv1(state))
+            x = torch.relu(self.conv2(x))
+            x = torch.relu(self.conv3(x))
             x = self.flat(x)
-            x = torch.relu(self.fc1(x))
-            x = torch.relu(self.fc2(x))
+            x = torch.tanh(self.fc1(x))
+            x = torch.tanh(self.fc2(x))
 
             mean = self.mean(x)
             std_dev = self.std(x)
@@ -176,7 +176,7 @@ class CriticCNN(torch.nn.Module):
             nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1),
             nn.ReLU(),
             Flatten(),
-            nn.Linear(3136, layer_1),
+            nn.Linear(2304, layer_1),
             nn.ReLU(),
             nn.Linear(layer_1,layer_2),
             nn.ReLU(),

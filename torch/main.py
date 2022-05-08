@@ -20,9 +20,10 @@ def main():
     save_dir = model_dir
     # env = gym.make(ENV)
     env = CarRacing()
-    iter_per_episode = 200
     n_state = env.observation_space.shape
     n_action = env.action_space.shape[0]
+
+    load_model = False
 
 
     env.seed(1234)
@@ -37,6 +38,10 @@ def main():
     GAMMA = 0.99
 
     ppo = Agent(n_state, n_action,layer_1_nodes=layer_1_nodes,layer_2_nodes=layer_2_nodes, batch_size=batch_size, save_dir=save_dir)
+
+    if load_model:
+        ppo.load_model()
+
     n_steps = 0
     M = 10
     score = []
@@ -45,8 +50,8 @@ def main():
         r = 0
         done = False
 
-        while not done:
-        # for _ in range(500):
+        # while not done:
+        for _ in range(1000):
             env.render()
             s = ppo.preprocess_image(s) / 255.0
             prob, action, value = ppo.take_action(s)

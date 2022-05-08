@@ -86,10 +86,10 @@ class Agent():
 
     def preprocess_image(self,image):
         # pytorch image: C x H x W
-        # image = image[0:86, 0:86, 0:3]
+        image = image[0:86, 0:86, 0:3]
         image_swp = np.swapaxes(image, -1, 0)
         image_swp = np.swapaxes(image_swp,-1, -2)
-        return image_swp/255.0
+        return image_swp
 
     def store_memory(self, state,action, prob, val, reward, done):
         self.memory.store_memory(state, action, reward, val, prob, done)
@@ -97,6 +97,11 @@ class Agent():
     def save_model(self):
         torch.save(self.actor.state_dict(), 'models/actor.ckpt')
         torch.save(self.critic.state_dict(), 'models/critic.ckpt')
+
+    def load_model(self):
+        self.actor.load_state_dict(torch.load('models/actor.ckpt'))
+        self.critic.load_state_dict(torch.load('models/critic.ckpt'))
+
 
     def train(self):
         epochs = 5
@@ -129,7 +134,6 @@ class Agent():
                 prob_new = dist_new.log_prob(actions)
                 r_t = prob_new.exp() / old_prob.exp()        
                 # L_clip
-                # breakpoint()
                 prob_clip = torch.clamp(r_t, 1-self.ep, 1+self.ep) * torch.reshape(advan[batch], (len(batch), 1))
                 weight_prob = torch.reshape(advan[batch], (len(batch), 1)) * r_t
                 actor_loss = -torch.min(weight_prob, prob_clip).mean()

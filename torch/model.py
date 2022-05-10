@@ -24,9 +24,7 @@ class Actor(torch.nn.Module):
                 nn.Linear(*num_state,layer_1),
                 nn.ReLU(),
                 nn.Linear(layer_1,layer_2),
-                nn.ReLU(),
-                nn.Linear(layer_2, num_actions),
-                nn.Tanh()
+                nn.ReLU()
             )
         else:
             self.model = nn.Sequential(
@@ -38,18 +36,23 @@ class Actor(torch.nn.Module):
                 nn.Softmax(dim=-1)
             )
 
+        if self.contineous:
+            self.mu = nn.Linear(layer_2, num_actions)
+            self.sigma = nn.Linear(layer_2, num_actions)
+
         self.optim = Adam(self.parameters(), lr=lr)
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.to(self.device)
 
-        if self.contineous:
-            self.action_var = torch.full((num_actions,), .6 * .6).to(self.device)
+
 
     def forward(self,state):
+        x = self.model(state)
         if self.contineous:
-            mean = self.model(state)
-            cov = torch.diag()
-            return MultivariateNormal(mean)
+            mean = self.mu(x)
+            std = self.sigma(x)
+            dist = Normal(mean, std.exp())
+            return dist
         else:
             pol = self.model(state)
             return Categorical(pol)
@@ -59,14 +62,13 @@ class Actor(torch.nn.Module):
 
 
 class Critic(torch.nn.Module):
-    def __init__(self, num_state, layer_1, layer_2, lr=0.0001, checkpt='ppo', contineous=False):
+    def __init__(self, num_state, layer_1, layer_2, lr=0.0001, checkpt='ppo'):
         super(Critic, self).__init__()
 
         self.nam_state = num_state
         self.layer_1 = layer_1
         self.layer_2 = layer_2
         self.chkpt = checkpt + '_critic.ckpt'
-        self.contienous = contineous
 
         self.model = nn.Sequential(
             nn.Linear(*num_state,layer_1),
@@ -151,6 +153,12 @@ class ActorCNN(torch.nn.Module):
             return dist
             
         else:
+            x = torch.relu(self.conv1(state))
+            x = torch.relu(self.conv2(x))
+            x = torch.relu(self.conv3(x))
+            x = self.flat(x)
+            x = torch.relu(self.fc1(x))
+            x = torch.relu(self.fc2(x))
             pol = self.model(state)
             return Categorical(pol)
 

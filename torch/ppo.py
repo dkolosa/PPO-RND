@@ -49,20 +49,22 @@ class Memory():
         
 
 class Agent():
-    def __init__(self, num_state, num_action, ep=0.2, beta=3, c1=0.1, layer_1_nodes=512, layer_2_nodes=256, batch_size=64,save_dir='models'):
+    def __init__(self, num_state, num_action, ep=0.2, beta=3, c1=0.1, 
+                layer_1_nodes=512, layer_2_nodes=256, batch_size=64,save_dir='models',
+                contineous=False):
         
         self.ep = ep
         self.beta = beta
         self.c1 = c1
         self.gamma = .99
         self.g_lambda = 0.95
-        self.contineous = True
+        self.contineous = contineous
 
-        # self.actor = Actor(num_state, num_action, layer_1_nodes, layer_2_nodes, contineous=True)
-        # self.critic = Critic(num_state, layer_1_nodes, layer_2_nodes, contineous=True)
+        self.actor = Actor(num_state, num_action, layer_1_nodes, layer_2_nodes, contineous=contineous)
+        self.critic = Critic(num_state, layer_1_nodes, layer_2_nodes)
 
-        self.actor = ActorCNN(num_state, num_action, layer_1_nodes, layer_2_nodes,lr=0.0001, checkpt='ppo', contineous=True)
-        self.critic = CriticCNN(num_state, layer_1_nodes, layer_2_nodes,contineous=True)
+        # self.actor = ActorCNN(num_state, num_action, layer_1_nodes, layer_2_nodes,lr=0.0001, checkpt='ppo', contineous=True)
+        # self.critic = CriticCNN(num_state, layer_1_nodes, layer_2_nodes,contineous=True)
 
         self.memory = Memory(batch_size)
 
@@ -75,9 +77,9 @@ class Agent():
             prob_dist = self.actor(state)
             value = self.critic(state)
             if self.contineous:
-                action = prob_dist.sample()
-            else:
                 action = prob_dist.mean
+            else:
+                action = prob_dist.sample()
 
             prob = torch.squeeze(prob_dist.log_prob(action)).cpu().detach().numpy()
             action = torch.squeeze(action).cpu().detach().numpy()

@@ -10,18 +10,21 @@ from gym.envs.box2d.car_racing import CarRacing
 def main():
 
     #init the env
-    ENVS = ('Pendulum-v0', 'MountainCarContinuous-v0', 'BipedalWalker-v3', 'LunarLanderContinuous-v2',
-        'BipedalWalkerHardcore-v3')
-
-    # ENV = 'LunarLander-v2'
+    ENVS = ('Pendulum-v1', 'MountainCarContinuous-v0', 'BipedalWalker-v3', 'LunarLanderContinuous-v2',
+        'BipedalWalkerHardcore-v3', 'CarRacing-v1', 'LunarLander-v2')
+    
     os.makedirs(os.path.join(os.getcwd(), 'models'), exist_ok=True)
     model_dir = os.path.join(os.getcwd(), 'models')
     # save_dir = os.path.join(model_dir)
     save_dir = model_dir
-    # env = gym.make(ENV)
-    env = CarRacing()
+    env = gym.make(ENVS[-1])
+
+    
     n_state = env.observation_space.shape
-    n_action = env.action_space.shape[0]
+    # n_action = env.action_space.shape[0]
+    n_action = env.action_space.n
+
+    contineous = False
 
     load_model = False
 
@@ -31,13 +34,15 @@ def main():
 
     num_episodes = 1001
 
-    batch_size = 32
+    batch_size = 64
     #Pendulum
     layer_1_nodes, layer_2_nodes = 256, 200
 
     GAMMA = 0.99
 
-    ppo = Agent(n_state, n_action,layer_1_nodes=layer_1_nodes,layer_2_nodes=layer_2_nodes, batch_size=batch_size, save_dir=save_dir)
+    ppo = Agent(n_state, n_action,
+                layer_1_nodes=layer_1_nodes, layer_2_nodes=layer_2_nodes, 
+                batch_size=batch_size, save_dir=save_dir, contineous=contineous)
 
     if load_model:
         ppo.load_model()
@@ -50,10 +55,10 @@ def main():
         r = 0
         done = False
 
-        # while not done:
-        for _ in range(1000):
+        while not done:
+        # for _ in range(1000):
             env.render()
-            s = ppo.preprocess_image(s) / 255.0
+            # s = ppo.preprocess_image(s) / 255.0
             prob, action, value = ppo.take_action(s)
             s_1, reward, done, _ = env.step(action)
             n_steps += 1

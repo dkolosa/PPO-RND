@@ -100,18 +100,18 @@ class ActorCNN(torch.nn.Module):
         img_size = 96*96
 
         if self.contineous:
-                self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=8, stride=4)
-                self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2)
-                self.conv3 = nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1)
+                self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=4)
+                self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=2, stride=2)
+                self.conv3 = nn.Conv2d(in_channels=64,out_channels=64,kernel_size=2, stride=1)
                 self.flat = Flatten()
-                self.fc1 = nn.Linear(4096,layer_1)
+                self.fc1 = nn.Linear(7744,layer_1)
                 self.fc2 = nn.Linear(layer_1,layer_2)
                 self.mean = nn.Linear(layer_2, num_actions)
                 self.std = nn.Linear(layer_2, num_actions)
 
         else:
             self.model = nn.Sequential(
-                nn.Conv2d(in_channels=4, out_channels=32, kernel_size=8, stride=4),
+                nn.Conv2d(in_channels=3, out_channels=32, kernel_size=8, stride=4),
                 nn.ReLU(),
                 nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=1),
                 nn.ReLU(),
@@ -146,10 +146,6 @@ class ActorCNN(torch.nn.Module):
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.to(self.device)
 
-        if self.contineous:
-            self.action_var = torch.full((num_actions,), .6 * .6).to(self.device)
-
-
 
     def forward(self,state):
         if self.contineous:
@@ -160,11 +156,11 @@ class ActorCNN(torch.nn.Module):
             x = torch.tanh(self.fc1(x))
             x = torch.tanh(self.fc2(x))
 
-            mean = self.mean(x) + 1.0
-            std_dev = self.std(x) + 1.0
-            dist = Normal(mean, std_dev)
+            mean = self.mean(x)
+            std_dev = self.std(x)
+            dist = Normal(mean, std_dev.exp())
             return dist
-            
+
         else:
             pol = self.model(state)
             return Categorical(pol)
@@ -186,14 +182,14 @@ class CriticCNN(torch.nn.Module):
         img_size= 96*96*3
 
         self.model = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=8, stride=4),
+            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=4),
             nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=6, stride=2),
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2),
             nn.ReLU(),
             nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1),
             nn.ReLU(),
             Flatten(),
-            nn.Linear(3136, layer_1),
+            nn.Linear(2304, layer_1),
             nn.ReLU(),
             nn.Linear(layer_1,layer_2),
             nn.ReLU(),

@@ -71,10 +71,9 @@ class Agent():
 
             state = torch.tensor([state], dtype=torch.float, device=self.actor.device)
             # torch.permute(state, (2,0,1))
-            print(state.shape)
             prob_dist = self.actor(state)
             action = prob_dist.sample()
-            
+            action = torch.clamp(action, -1, 1)
             # action = tytorch.clamp(action, -1, 1)
             prob = torch.squeeze(prob_dist.log_prob(action)).cpu().detach().numpy()
             action = torch.squeeze(action).cpu().detach().numpy()
@@ -111,7 +110,6 @@ class Agent():
             adv = (adv - adv.mean()) / (adv.std()+1e-4)
         return adv, returns
 
-
     def train(self):
         epochs = 5
             
@@ -121,7 +119,9 @@ class Agent():
         actions = torch.tensor(action_mem, dtype=torch.float, device=self.actor.device)
         old_probs = torch.tensor(prob_mem, dtype=torch.float, device=self.actor.device)
         rewards = torch.tensor(reward_mem, dtype=torch.float, device=self.actor.device)
-        advantage, returns = self.calculate_adv_ret(state, states_1, rewards, done_mem)
+
+        advantage, returns = self.calculate_adv_ret(states, states_1, rewards, done_mem)
+
 
         for epoch in range(epochs):
             batches = self.memory.get_batches()
@@ -132,7 +132,6 @@ class Agent():
                 state = states[batch]
                 old_prob = old_probs[batch]
                 action = actions[batch]
-                breakpoint()
 
                 dist_new = self.actor(states)
                 entropy = dist_new.entropy().sum(1, keepdims=True)

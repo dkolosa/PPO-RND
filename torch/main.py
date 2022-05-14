@@ -38,7 +38,7 @@ def main():
 
     ppo = Agent(n_state, n_action,layer_1_nodes=layer_1_nodes,layer_2_nodes=layer_2_nodes, batch_size=batch_size, save_dir=save_dir)
     n_steps = 0
-    M = 100
+    M = 5
     score = []
     for i in range(num_episodes):
         s = env.reset()
@@ -47,13 +47,13 @@ def main():
         s = ppo.preprocess_image(s)
         # while not done:
         for _ in range(500):
-            # env.render()
+            env.render()
             prob, action = ppo.take_action(s)
             s_1, reward, done, _ = env.step(action)
             s_1 = ppo.preprocess_image(s_1)
             n_steps += 1
             r += reward
-            print(action)
+
             ppo.store_memory(s, s_1, action, prob, reward, done)
             if n_steps % M == 0:
                 ppo.train()

@@ -6,9 +6,14 @@ from torch.distributions import Beta, Normal
 from torch.optim import Adam
 
 
+# class Flatten(nn.Module):
+#     def forward(self, input):
+#         return input.view(input.size(0), -1)
+
 class Flatten(nn.Module):
-    def forward(self, input):
-        return input.view(input.size(0), -1)
+    def forward(self, x):
+        batch_size = x.shape[0]
+        return x.view(batch_size, -1)
 
 class Actor(torch.nn.Module):
     def __init__(self, num_state, num_actions, layer_1, layer_2, lr=0.0001, checkpt='ppo',
@@ -140,7 +145,6 @@ class ActorCNN(torch.nn.Module):
             x = model(input)
             return x.shape[1]
 
-        print(calc_cnnweights())
 
         self.optim = Adam(self.parameters(), lr=lr)
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -188,8 +192,8 @@ class CriticCNN(torch.nn.Module):
             nn.ReLU(),
             nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1),
             nn.ReLU(),
-            Flatten(),
-            nn.Linear(2304, layer_1),
+            nn.Flatten(),
+            nn.Linear(5184, layer_1),
             nn.ReLU(),
             nn.Linear(layer_1,layer_2),
             nn.ReLU(),

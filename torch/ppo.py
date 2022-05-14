@@ -83,7 +83,7 @@ class Agent():
 
     def preprocess_image(self,image):
         # pytorch image: C x H x W
-        # image = image[0:86, 0:86, 0:3]
+        image = image[0:86, 0:86, 0:3]
         image_swp = np.swapaxes(image, -1, 0)
         image_swp = np.swapaxes(image_swp,-1, -2)
         return image_swp/255.0

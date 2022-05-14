@@ -5,10 +5,8 @@ from torch.distributions.categorical import Categorical
 from torch.distributions import Beta, Normal
 from torch.optim import Adam
 
+import numpy as np
 
-# class Flatten(nn.Module):
-#     def forward(self, input):
-#         return input.view(input.size(0), -1)
 
 class Flatten(nn.Module):
     def forward(self, x):
@@ -109,7 +107,7 @@ class ActorCNN(torch.nn.Module):
                 self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=2, stride=2)
                 self.conv3 = nn.Conv2d(in_channels=64,out_channels=64,kernel_size=2, stride=1)
                 self.flat = Flatten()
-                self.fc1 = nn.Linear(7744,layer_1)
+                self.fc1 = nn.Linear(5184,layer_1)
                 self.fc2 = nn.Linear(layer_1,layer_2)
                 self.mean = nn.Linear(layer_2, num_actions)
                 self.std = nn.Linear(layer_2, num_actions)
@@ -185,7 +183,7 @@ class CriticCNN(torch.nn.Module):
 
         img_size= 96*96*3
 
-        self.model = nn.Sequential(
+        self.critic_ext = nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=4),
             nn.ReLU(),
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2),
@@ -193,20 +191,108 @@ class CriticCNN(torch.nn.Module):
             nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(5184, layer_1),
+            nn.Linear(4096, layer_1),
             nn.ReLU(),
             nn.Linear(layer_1,layer_2),
             nn.ReLU(),
             nn.Linear(layer_2, 1)
         )
 
+        self.critic_int = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=4),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1),
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(4096, layer_1),
+            nn.ReLU(),
+            nn.Linear(layer_1,layer_2),
+            nn.ReLU(),
+            nn.Linear(layer_2, 1)
+        )
+
+
+        for p in self.modules():
+            if isinstance(p, nn.Conv2d):
+                torch.init.orthogonal_(p.weight, np.sqrt(2))
+                p.bias.data.zero_()
+
+            if isinstance(p, nn.Linear):
+                torch.init.orthogonal_(p.weight, np.sqrt(2))
+                p.bias.data.zero_()
+
+        torch.init.orthogonal_(self.critic_ext.weight, 0.01)
+        self.critic_ext.bias.data.zero_()
+
+        torch.init.orthogonal_(self.critic_int.weight, 0.01)
+        self.critic_int.bias.data.zero_()
+
         self.optim = Adam(self.parameters(), lr=lr)
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.to(self.device)
 
     def forward(self,state):
-        Val = self.model(state)
-        return Val
+        ext_val = self.critic_ext(state)
+        int_val = self.critic_int(state)
+        return ext_val, int_val
 
     def save_model(self, save_dir):
         torch.save(self.state_dict(),save_dir+'/'+self.chkpt)
+
+
+class RND(nn.Models):
+    def __init__(self) -> None:
+        super(RND, self).__init__()
+
+
+        self.predictor = nn.Sequential(
+                nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=4),
+                nn.LeakyReLU(),
+                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2),
+                nn.LeakyReLU(),
+                nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1),
+                nn.LeakyReLU(),
+                nn.Flatten(),
+                nn.Linear(4096, 512),
+                nn.ReLU(),
+                nn.Linear(512,512),
+                nn.ReLU(),
+                nn.Linear(512, 512)
+        )
+
+
+        self.target = nn.Sequential(
+                nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=4),
+                nn.LeakyReLU(),
+                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2),
+                nn.LeakyReLU(),
+                nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1),
+                nn.LeakyReLU(),
+                nn.Flatten(),
+                nn.Linear(128, 512)
+        )
+
+        self.optim = Adam(self.predictor.parameters(), lr=0.0001)
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+        self.predictor.to(self.device)
+        self.target.to(self.device)
+
+        for p in self.modules():
+            if isinstance(p, nn.Conv2d):
+                torch.init.orthogonal_(p.weight, np.sqrt(2))
+                p.bias.data.zero_()
+
+            if isinstance(p, nn.Linear):
+                torch.init.orthogonal_(p.weight, np.sqrt(2))
+                p.bias.data.zero_()
+
+
+    def forward(self, next_state):
+
+        predict = self.predictor(next_state)
+        target = self.target(next_state)
+
+        return predict, target

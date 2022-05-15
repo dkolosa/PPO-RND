@@ -102,33 +102,18 @@ class ActorCNN(torch.nn.Module):
 
         img_size = 96*96
 
-        if self.contineous:
-                self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=4)
-                self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=2, stride=2)
-                self.conv3 = nn.Conv2d(in_channels=64,out_channels=64,kernel_size=2, stride=1)
-                self.flat = Flatten()
-                self.fc1 = nn.Linear(5184,layer_1)
-                self.fc2 = nn.Linear(layer_1,layer_2)
-                self.mean = nn.Linear(layer_2, num_actions)
-                self.std = nn.Linear(layer_2, num_actions)
+  
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=4)
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=2, stride=2)
+        self.conv3 = nn.Conv2d(in_channels=64,out_channels=64,kernel_size=2, stride=1)
+        self.flat = Flatten()
 
-        else:
-            self.model = nn.Sequential(
-                nn.Conv2d(in_channels=3, out_channels=32, kernel_size=8, stride=4),
-                nn.ReLU(),
-                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=1),
-                nn.ReLU(),
-                nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1),
-                nn.ReLU(),
-                Flatten(),
-                # nn.Linear(12 * 12 * 64,layer_1),
-                nn.Linear(7*7*64,256),
-                nn.ReLU(),
-                nn.Linear(256,448),
-                nn.ReLU(),
-                nn.Linear(layer_2, num_actions),
-                nn.Softmax(dim=-1)
-            )
+        self.rnn1 = nn.LSTM(batch_first=True, input_size=64*9*9, hidden_size=256, num_layers=2)
+        
+        self.fc1 = nn.Linear(layer_1,layer_1)
+        self.fc2 = nn.Linear(layer_1,layer_2)
+        self.mean = nn.Linear(layer_2, num_actions)
+        self.std = nn.Linear(layer_2, num_actions)
 
         def calc_cnnweights():
             input = torch.zeros((1, 4, 96, 96))
@@ -154,7 +139,9 @@ class ActorCNN(torch.nn.Module):
             x = F.relu(self.conv1(state))
             x = F.relu(self.conv2(x))
             x = F.relu(self.conv3(x))
-            x = self.flat(x)
+            x = x.view(-1, 1, 64*9*9)
+            x, _ = self.rnn1(x)
+            # x = self.flat(x)
             x = torch.tanh(self.fc1(x))
             x = torch.tanh(self.fc2(x))
 

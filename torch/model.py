@@ -214,20 +214,20 @@ class CriticCNN(torch.nn.Module):
         )
 
 
-        for p in self.modules():
-            if isinstance(p, nn.Conv2d):
-                torch.init.orthogonal_(p.weight, np.sqrt(2))
-                p.bias.data.zero_()
+        # for p in self.modules():
+        #     if isinstance(p, nn.Conv2d):
+        #         torch.nn.init.orthogonal_(p.weight, np.sqrt(2))
+        #         p.bias.data.zero_()
 
-            if isinstance(p, nn.Linear):
-                torch.init.orthogonal_(p.weight, np.sqrt(2))
-                p.bias.data.zero_()
+        #     if isinstance(p, nn.Linear):
+        #         torch.nn.init.orthogonal_(p.weight, np.sqrt(2))
+        #         p.bias.data.zero_()
 
-        torch.init.orthogonal_(self.critic_ext.weight, 0.01)
-        self.critic_ext.bias.data.zero_()
+        # torch.nn.init.orthogonal_(self.critic_ext.weight, 0.01)
+        # self.critic_ext.bias.data.zero_()
 
-        torch.init.orthogonal_(self.critic_int.weight, 0.01)
-        self.critic_int.bias.data.zero_()
+        # torch.nn.init.orthogonal_(self.critic_int.weight, 0.01)
+        # self.critic_int.bias.data.zero_()
 
         self.optim = Adam(self.parameters(), lr=lr)
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -242,7 +242,7 @@ class CriticCNN(torch.nn.Module):
         torch.save(self.state_dict(),save_dir+'/'+self.chkpt)
 
 
-class RND(nn.Models):
+class RND(torch.nn.Module):
     def __init__(self) -> None:
         super(RND, self).__init__()
 
@@ -280,14 +280,14 @@ class RND(nn.Models):
         self.predictor.to(self.device)
         self.target.to(self.device)
 
-        for p in self.modules():
-            if isinstance(p, nn.Conv2d):
-                torch.init.orthogonal_(p.weight, np.sqrt(2))
-                p.bias.data.zero_()
+        # for p in self.modules():
+        #     if isinstance(p, nn.Conv2d):
+        #         torch.nn.init.orthogonal_(p.weight, np.sqrt(2))
+        #         p.bias.data.zero_()
 
-            if isinstance(p, nn.Linear):
-                torch.init.orthogonal_(p.weight, np.sqrt(2))
-                p.bias.data.zero_()
+        #     if isinstance(p, nn.Linear):
+        #         torch.nn.init.orthogonal_(p.weight, np.sqrt(2))
+        #         p.bias.data.zero_()
 
 
     def forward(self, next_state):

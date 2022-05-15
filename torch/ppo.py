@@ -83,13 +83,18 @@ class RunningMeanStd(object):
 
 
 class Agent():
-    def __init__(self, num_state, num_action, epoch=5, ep=0.2, beta=3, c1=0.1, layer_1_nodes=512, layer_2_nodes=256, batch_size=64,save_dir='models'):
+    def __init__(self, num_state, num_action, epoch=5, ep=0.2, beta=3, c1=0.99, layer_1_nodes=512, layer_2_nodes=256, batch_size=64,save_dir='models'):
         
         self.ep = ep
         self.beta = beta
         self.c1 = c1
-        self.gamma = .99
+        self.gamma_e = .99
+        self.gamma_i = .999
         self.g_lambda = 0.95
+
+        self.r_e_coef = 2
+        self.r_i_coef = 1
+
 
         self.epoch = epoch
 
@@ -138,16 +143,18 @@ class Agent():
             if ext:
                 value, _ = self.critic(state)
                 value_1, _ = self.critic(state_1)
+                gamma = self.gamma_e
             else:
                 _, value = self.critic(state)
                 _, value_1 = self.critic(state_1)
+                gamma = self.gamma_i
             
-
-            delta = reward + self.gamma * value_1 - value
+            
+            delta = reward + gamma * value_1 - value
             delta = delta.cpu().flatten().numpy()
             adv = [0]
             for dlt, mask in zip(delta[::-1], done[::-1]):
-                advantage = dlt + self.gamma * self.g_lambda * adv[-1] * \
+                advantage = dlt + gamma * self.g_lambda * adv[-1] * \
                             (1 - mask)
                 adv.append(advantage)
             adv.reverse()
@@ -157,13 +164,12 @@ class Agent():
             adv = (adv - adv.mean()) / (adv.std()+1e-4)
         return adv, returns
 
-    def intrinsic_reward(self, state):
-
+    def intrinsic_reward(self, state): 
+        # Normalize the next_state obs
+        stae = np.clip((state - self.obs_rms.mean)/ self.obs_rms.var, -5, 5)
         state = torch.tensor([state], dtype=torch.float, device=self.rnd.device)
         predict, target = self.rnd(state)
-        int_reward = (predict - target).pow(2).mean()
-
-        self.rwd_rms.update(int_reward)
+        int_reward = (predict - target).pow(2).mean(1).cpu().detach().numpy()
         return int_reward
 
     def train(self):
@@ -175,14 +181,11 @@ class Agent():
         actions = torch.tensor(action_mem, dtype=torch.float, device=self.actor.device)
         old_probs = torch.tensor(prob_mem, dtype=torch.float, device=self.actor.device)
         rewards = torch.tensor(reward_mem, dtype=torch.float, device=self.actor.device)
-        r_i = torch.tensor(r_i_mem, dtype=torch.float, device=self.rnd.device)
-        
-        self.obs_rms.update(r_i_mem)
+        r_i = torch.tensor(r_i_mem, dtype=torch.float, device=self.actor.device)
 
-        # rewards_int = self.intrinsic_reward(states_1)
 
         advantage, returns = self.calculate_adv_ret(states, states_1, rewards, done_mem, ext=True)
-        advantage_int, returns_int = self.calculate_adv_ret(states, states_1, rewards_int, done_mem, ext=False)
+        advantage_int, returns_int = self.calculate_adv_ret(states, states_1, r_i, done_mem, ext=False)
 
         advantage = advantage, advantage_int
 
@@ -239,6 +242,13 @@ class Agent():
                 self.rnd.optim.step()
 
         self.memory.clear_memory()
+
+    def save_models(self):
+        print(f'Saving Models')
+        torch.save(self.actor.state_dict(), self.save_dir+'_actor.ckpt')
+        torch.save(self.critic.state_dict(), self.save_dir+'_critic.ckpt')
+        torch.save(self.rnd.state_dict(), self.save_dir+'_rnd.ckpt')
+
 
 
         

@@ -167,9 +167,6 @@ class ActorCNN(torch.nn.Module):
             pol = self.model(state)
             return Categorical(pol)
 
-    def save_model(self, save_dir):
-        torch.save(self.state_dict(), save_dir+'/'+self.chkpt)
-
 
 class CriticCNN(torch.nn.Module):
     def __init__(self, num_state, layer_1, layer_2, lr=0.0001, checkpt='ppo', contineous=False):
@@ -238,9 +235,6 @@ class CriticCNN(torch.nn.Module):
         int_val = self.critic_int(state)
         return ext_val, int_val
 
-    def save_model(self, save_dir):
-        torch.save(self.state_dict(),save_dir+'/'+self.chkpt)
-
 
 class RND(torch.nn.Module):
     def __init__(self) -> None:
@@ -271,7 +265,7 @@ class RND(torch.nn.Module):
                 nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1),
                 nn.LeakyReLU(),
                 nn.Flatten(),
-                nn.Linear(128, 512)
+                nn.Linear(4096, 512)
         )
 
         self.optim = Adam(self.predictor.parameters(), lr=0.0001)

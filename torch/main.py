@@ -50,7 +50,7 @@ def main():
         s = ppo.preprocess_image(s)
         for _ in range(100):
             action = env.action_space.sample()
-            s_1_norm = env.step(action)
+            s_1_norm, _, _, _ = env.step(action)
             s_1_norm = ppo.preprocess_image(s_1_norm)
             ppo.obs_rms.update(s_1_norm)
 
@@ -62,15 +62,14 @@ def main():
             s_1 = ppo.preprocess_image(s_1)
             n_steps += 1
             r += reward
-            # Normalize the obs
-            ppo.obs_rms.update(S)
-            ppo.store_memory(s, s_1, action, prob, reward, done)
+            r_i = ppo.intrinsic_reward(s_1)
+            ppo.store_memory(s, s_1, action, prob, reward, r_i, done)
             if n_steps % M == 0:
                 ppo.train()
             s = s_1
         score.append(r)
         print(f'episode: {i}, reward: {r}, steps: {n_steps}')
-
+        ppo.save_models()
     plt.plot(score)
     plt.show()
 

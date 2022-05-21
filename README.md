@@ -1,4 +1,4 @@
-# PPO Algorithm (WIP)
+# PPO RND Algorithm (WIP)
 
 Simple ppo implementation adapted to use random network distillation (RND). PyTorch implementation has RND for contienous action spaces with future support for discrete.
 

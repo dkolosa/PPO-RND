@@ -1,6 +1,13 @@
+"""This implementation is inspired from jcwleo:
+https://github.com/jcwleo/random-network-distillation-pytorch
+"""
+
 import numpy as np
 import torch
 from model import Actor, Critic, ActorCNN, CriticCNN, RND
+from torch.utils.data import BatchSampler, RandomSampler
+import torch.nn.functional as F
+from torch.optim import Adam
 
 
 class Memory():
@@ -83,7 +90,9 @@ class RunningMeanStd(object):
 
 
 class Agent():
-    def __init__(self, num_state, num_action, epoch=5, ep=0.2, beta=3, c1=0.99, layer_1_nodes=512, layer_2_nodes=256, batch_size=64,save_dir='models'):
+    def __init__(self, num_state, num_action, epoch=5, ep=0.2, beta=3, c1=0.09, 
+                layer_1_nodes=512, layer_2_nodes=256, batch_size=64,save_dir='models',
+                contineous=True):
         
         self.ep = ep
         self.beta = beta
@@ -95,16 +104,24 @@ class Agent():
         self.r_e_coef = 2
         self.r_i_coef = 1
 
+        self.batch_size = batch_size
+
+        self.contineous = contineous
+
 
         self.epoch = epoch
 
-        # self.actor = Actor(num_state, num_action, layer_1_nodes, layer_2_nodes, contineous=True)
-        # self.critic = Critic(num_state, layer_1_nodes, layer_2_nodes, contineous=True)
-
-        self.actor = ActorCNN(num_state, num_action, layer_1_nodes, layer_2_nodes,lr=0.0001, checkpt='ppo', contineous=True)
-        self.critic = CriticCNN(num_state, layer_1_nodes, layer_2_nodes,contineous=True)
+        self.actor = ActorCNN(num_action, layer_1_nodes, layer_2_nodes, checkpt='ppo', contineous=contineous)
+        self.critic = CriticCNN(layer_1_nodes, layer_2_nodes)
         
         self.rnd = RND()
+
+        self.optimizer = Adam(list(self.actor.parameters())+list(self.critic.critic_ext.parameters()) +\
+                              list(self.critic.critic_int.parameters()) +\
+                              list(self.rnd.predictor.parameters()),
+                              lr=1e-4)
+
+        self.optimizer.param_groups
 
         self.obs_rms = RunningMeanStd()
         self.rwd_rms = RunningMeanStd(shape=(1,3,86,86))
@@ -112,6 +129,9 @@ class Agent():
         self.memory = Memory(batch_size)
 
         self.save_dir = save_dir
+
+
+    
 
     def take_action(self,state):
         with torch.no_grad():
@@ -187,59 +207,64 @@ class Agent():
         advantage, returns = self.calculate_adv_ret(states, states_1, rewards, done_mem, ext=True)
         advantage_int, returns_int = self.calculate_adv_ret(states, states_1, r_i, done_mem, ext=False)
 
-        advantage = advantage, advantage_int
+        advantage = advantage + advantage_int
+
+        forward_mse = torch.nn.MSELoss(reduction='none')
 
         for epoch in range(epochs):
-            batches = self.memory.get_batches()
-
-            for batch in batches:
+            # batches = self.memory.get_batches()
+            for batch in BatchSampler(RandomSampler(range(len(self.memory.state))), self.batch_size, False):
+            # for batch in batches:
 
                 # calculate r_t(theta)
                 state = states[batch]
                 old_prob = old_probs[batch]
                 action = actions[batch]
 
+                # for Curiosity-driven(Random Network Distillation)
+                predict_next_state_feature, target_next_state_feature = self.rnd(states_1[batch])
+                forward_loss = forward_mse(predict_next_state_feature, target_next_state_feature.detach()).mean(-1)
+                # Proportion of exp used for predictor update
+                mask = torch.rand(len(forward_loss)).to(self.rnd.device)
+                mask = (mask < 0.25).type(torch.FloatTensor).to(self.rnd.device)
+                forward_loss = (forward_loss * mask).sum() / torch.max(mask.sum(), torch.Tensor([1]).to(self.rnd.device))
+
                 dist_new = self.actor(states)
                 entropy = dist_new.entropy().sum(1, keepdims=True)
                 prob_new = dist_new.log_prob(action)
 
-                r_t = (prob_new.sum(1, keepdims=1) - old_prob.sum(1, keepdims=1)).exp()        
+                r_t = (prob_new.sum(1, keepdims=True) - old_prob.sum(1, keepdims=True)).exp()        
 
                 # L_clip
                 prob_clip = torch.clamp(r_t, 1-self.ep, 1+self.ep) * advantage[batch]
                 weight_prob = advantage[batch] * r_t
 
-                actor_loss = -torch.min(weight_prob, prob_clip).mean()
-                actor_loss -= entropy * self.c1
+                actor_loss = -torch.min(weight_prob, prob_clip)
+                actor_loss = (actor_loss - entropy * self.c1).mean()
 
-                self.actor.optim.zero_grad()
-                actor_loss.mean().backward()
-                self.actor.optim.step()
+                # self.actor.optim.zero_grad()
+                # actor_loss.mean().backward()
+                # self.actor.optim.step()
 
 
                 # critic loss
                 value_ext, value_int = self.critic(state)
                 
-                V_ext_t1 = returns[batch] + value_ext
-                critic_ext_loss = (V_ext_t1 - value_ext).pow(2)
-                critic_ext_loss = critic_ext_loss.mean()
-
-                V_int_t1 = returns_int[batch] + value_ext
-                critic_int_loss = (V_int_t1 - value_int).pow(2)
-                critic_int_loss = critic_int_loss.mean()
+                critic_ext_loss = F.mse_loss(returns[batch], value_ext)
+                critic_int_loss = F.mse_loss(returns_int[batch], value_int)
 
                 critic_loss = critic_ext_loss + critic_int_loss
 
-                self.critic.optim.zero_grad()
-                critic_loss.backward()
-                self.critic.optim.step()
+                # self.critic.optim.zero_grad()
+                # critic_loss.backward()
+                # self.critic.optim.step()
 
-                # optimize the prediction rnd network
-                rnd_predict, rnd_target = self.rnd(states_1)
-                dist_loss = (rnd_predict - rnd_target).pow(2).mean()
-                self.rnd.optim.zero_grad()
-                dist_loss.backward()
-                self.rnd.optim.step()
+                total_loss = 0.5 * critic_loss + actor_loss + forward_loss
+                total_loss.backward()
+                # self.global_grad_norm_(list(self.actor.parameters())+list(self.critic.critic_ext.parameters()) +\
+                #                   list(self.critic.critic_int.parameters()) +\
+                #                   list(self.rnd.predictor.parameters()))
+                self.optimizer.step()
 
         self.memory.clear_memory()
 
@@ -250,6 +275,33 @@ class Agent():
         torch.save(self.rnd.state_dict(), self.save_dir+'_rnd.ckpt')
 
 
+    def global_grad_norm_(self, parameters, norm_type=2):
+        r"""Clips gradient norm of an iterable of parameters.
+        The norm is computed over all gradients together, as if they were
+        concatenated into a single vector. Gradients are modified in-place.
+        Arguments:
+            parameters (Iterable[Tensor] or Tensor): an iterable of Tensors or a
+                single Tensor that will have gradients normalized
+            max_norm (float or int): max norm of the gradients
+            norm_type (float or int): type of the used p-norm. Can be ``'inf'`` for
+                infinity norm.
+        Returns:
+            Total norm of the parameters (viewed as a single vector).
+        """
+        if isinstance(parameters, torch.Tensor):
+            parameters = [parameters]
+        parameters = list(filter(lambda p: p.grad is not None, parameters))
+        norm_type = float(norm_type)
+        if norm_type == inf:
+            total_norm = max(p.grad.data.abs().max() for p in parameters)
+        else:
+            total_norm = 0
+            for p in parameters:
+                param_norm = p.grad.data.norm(norm_type)
+                total_norm += param_norm.item() ** norm_type
+            total_norm = total_norm ** (1. / norm_type)
+
+        return total_norm
 
         
 

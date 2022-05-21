@@ -15,7 +15,7 @@ class Flatten(nn.Module):
 
 class Actor(torch.nn.Module):
     def __init__(self, num_state, num_actions, layer_1, layer_2, lr=0.0001, checkpt='ppo',
-                 contineous=False):
+                 contineous=True):
         super(Actor, self).__init__()
 
         self.chkpt = checkpt + '_actor.ckpt'
@@ -92,7 +92,7 @@ class Critic(torch.nn.Module):
 
 
 class ActorCNN(torch.nn.Module):
-    def __init__(self, num_state, num_actions, layer_1, layer_2, lr=0.0001, checkpt='ppo',
+    def __init__(self, num_actions, layer_1, layer_2, checkpt='ppo',
                  contineous=True):
         super(ActorCNN, self).__init__()
 
@@ -127,24 +127,9 @@ class ActorCNN(torch.nn.Module):
                 nn.Linear(256,448),
                 nn.ReLU(),
                 nn.Linear(layer_2, num_actions),
-                nn.Softmax(dim=-1)
             )
 
-        def calc_cnnweights():
-            input = torch.zeros((1, 4, 96, 96))
-            model = nn.Sequential(
-                nn.Conv2d(in_channels=4, out_channels=32, kernel_size=8, stride=4),
-                nn.ReLU(),
-                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=1),
-                nn.ReLU(),
-                nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1),
-                nn.ReLU())
 
-            x = model(input)
-            return x.shape[1]
-
-
-        self.optim = Adam(self.parameters(), lr=lr)
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.to(self.device)
 
@@ -158,25 +143,23 @@ class ActorCNN(torch.nn.Module):
             x = torch.tanh(self.fc1(x))
             x = torch.tanh(self.fc2(x))
 
-            mean = self.mean(x)
-            std_dev = self.std(x)
-            dist = Normal(mean, std_dev.exp())
+            mean = torch.tanh(self.mean(x))
+            std_dev = F.softmax(self.std(x),dim=-1)
+            dist = Normal(mean, std_dev)
             return dist
 
         else:
-            pol = self.model(state)
+            pol = torch.softmax(self.model(state))
             return Categorical(pol)
 
 
 class CriticCNN(torch.nn.Module):
-    def __init__(self, num_state, layer_1, layer_2, lr=0.0001, checkpt='ppo', contineous=False):
+    def __init__(self, layer_1, layer_2, checkpt='ppo'):
         super(CriticCNN, self).__init__()
 
-        self.nam_state = num_state
         self.layer_1 = layer_1
         self.layer_2 = layer_2
         self.chkpt = checkpt + '_critic.ckpt'
-        self.contienous = contineous
 
         img_size= 96*96*3
 
@@ -211,22 +194,16 @@ class CriticCNN(torch.nn.Module):
         )
 
 
-        # for p in self.modules():
-        #     if isinstance(p, nn.Conv2d):
-        #         torch.nn.init.orthogonal_(p.weight, np.sqrt(2))
-        #         p.bias.data.zero_()
+        for p in self.modules():
+            if isinstance(p, nn.Conv2d):
+                torch.nn.init.orthogonal_(p.weight, np.sqrt(2))
+                p.bias.data.zero_()
 
-        #     if isinstance(p, nn.Linear):
-        #         torch.nn.init.orthogonal_(p.weight, np.sqrt(2))
-        #         p.bias.data.zero_()
+            if isinstance(p, nn.Linear):
+                torch.nn.init.orthogonal_(p.weight, np.sqrt(2))
+                p.bias.data.zero_()
+        
 
-        # torch.nn.init.orthogonal_(self.critic_ext.weight, 0.01)
-        # self.critic_ext.bias.data.zero_()
-
-        # torch.nn.init.orthogonal_(self.critic_int.weight, 0.01)
-        # self.critic_int.bias.data.zero_()
-
-        self.optim = Adam(self.parameters(), lr=lr)
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.to(self.device)
 
@@ -268,20 +245,19 @@ class RND(torch.nn.Module):
                 nn.Linear(4096, 512)
         )
 
-        self.optim = Adam(self.predictor.parameters(), lr=0.0001)
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
         self.predictor.to(self.device)
         self.target.to(self.device)
 
-        # for p in self.modules():
-        #     if isinstance(p, nn.Conv2d):
-        #         torch.nn.init.orthogonal_(p.weight, np.sqrt(2))
-        #         p.bias.data.zero_()
+        for p in self.modules():
+            if isinstance(p, nn.Conv2d):
+                torch.nn.init.orthogonal_(p.weight, np.sqrt(2))
+                p.bias.data.zero_()
 
-        #     if isinstance(p, nn.Linear):
-        #         torch.nn.init.orthogonal_(p.weight, np.sqrt(2))
-        #         p.bias.data.zero_()
+            if isinstance(p, nn.Linear):
+                torch.nn.init.orthogonal_(p.weight, np.sqrt(2))
+                p.bias.data.zero_()
 
 
     def forward(self, next_state):

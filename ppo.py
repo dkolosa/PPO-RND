@@ -9,6 +9,8 @@ from torch.utils.data import BatchSampler, RandomSampler
 import torch.nn.functional as F
 from torch.optim import Adam
 
+from torch.utils.tensorboard import SummaryWriter
+
 
 class Memory():
     def __init__(self,batch_size):
@@ -18,7 +20,6 @@ class Memory():
         self.prob = []
         self.action = []
         self.reward = []
-        self.r_i = []
         self.done = []
         self.batch_size = batch_size
 
@@ -29,22 +30,13 @@ class Memory():
             np.array(self.action),\
             np.array(self.prob),\
             np.array(self.reward),\
-            np.array(self.r_i), \
             np.array(self.done)
         
-    def get_batches(self):
-        n_states = len(self.state)
-        n_batches = int(n_states // self.batch_size)
-        indices = np.arange(n_states, dtype=np.int64)
-        np.random.shuffle(indices)
-        return [indices[i*self.batch_size:(i+1)*self.batch_size] for i in range(n_batches)]
-        
-    def store_memory(self, state, s_1, action, prob, reward, r_i, done):
+    def store_memory(self, state, s_1, action, prob, reward, done):
         self.state.append(state)
         self.state_1.append(s_1)
         self.action.append(action)
         self.reward.append(reward)
-        self.r_i.append(r_i)
         self.prob.append(prob)
         self.done.append(done)
 
@@ -53,7 +45,6 @@ class Memory():
         self.state_1.clear()
         self.action.clear()
         self.reward.clear()
-        self.r_i.clear()
         self.prob.clear()
         self.done.clear()
         
@@ -92,8 +83,9 @@ class RunningMeanStd(object):
 class Agent():
     def __init__(self, num_state, num_action, epoch=5, ep=0.2, beta=3, c1=0.09, 
                 layer_1_nodes=512, layer_2_nodes=256, batch_size=64,save_dir='models',
-                contineous=True):
+                contineous=True, writer=SummaryWriter()):
         
+        self.writer = writer
         self.ep = ep
         self.beta = beta
         self.c1 = c1
@@ -102,11 +94,12 @@ class Agent():
         self.g_lambda = 0.95
 
         self.r_e_coef = 2
-        self.r_i_coef = 1
 
         self.batch_size = batch_size
 
         self.contineous = contineous
+
+        self.rwd_mtd = RunningMeanStd()
 
 
         self.epoch = epoch
@@ -114,37 +107,23 @@ class Agent():
         self.actor = ActorCNN(num_action, layer_1_nodes, layer_2_nodes, checkpt='ppo', contineous=contineous)
         self.critic = CriticCNN(layer_1_nodes, layer_2_nodes)
         
-        self.rnd = RND()
 
-        self.optimizer = Adam(list(self.actor.parameters())+list(self.critic.critic_ext.parameters()) +\
-                              list(self.critic.critic_int.parameters()) +\
-                              list(self.rnd.predictor.parameters()),
-                              lr=1e-4)
-
-        self.optimizer.param_groups
-
-        self.obs_rms = RunningMeanStd()
-        self.rwd_rms = RunningMeanStd(shape=(1,3,86,86))
+        self.optimizer_actor = Adam(self.actor.parameters(), 1e-3)
+        self.optimizer_critic = Adam(self.critic.parameters(),1e-4)
 
         self.memory = Memory(batch_size)
 
         self.save_dir = save_dir
 
-
     
-
-    def take_action(self,state):
-        with torch.no_grad():
-
-            state = torch.tensor([state], dtype=torch.float, device=self.actor.device)
-            # torch.permute(state, (2,0,1))
-            prob_dist = self.actor(state)
-            action = prob_dist.sample()
-            action = torch.clamp(action, -1, 1)
-            # action = tytorch.clamp(action, -1, 1)
-            prob = torch.squeeze(prob_dist.log_prob(action)).cpu().detach().numpy()
-            action = torch.squeeze(action).cpu().detach().numpy()
-
+    @torch.no_grad()
+    def take_action(self, state):
+        state = torch.tensor([state], dtype=torch.float, device=self.actor.device)
+        prob_dist = self.actor.get_dist(state)
+        action = prob_dist.sample()
+        action = torch.clamp(action, -1, 1)
+        prob = torch.squeeze(prob_dist.log_prob(action)).cpu().detach().numpy()
+        action = torch.squeeze(action).cpu().detach().numpy()
 
         return prob, action
 
@@ -152,23 +131,18 @@ class Agent():
         # pytorch image: C x H x W
         image = image[0:86, 0:86, 0:3]
         image_swp = np.swapaxes(image, -1, 0)
-        image_swp = np.swapaxes(image_swp,-1, -2)
+        image_swp = np.transpose(image_swp, (0,2,1))
         return image_swp/255.0
 
-    def store_memory(self, state, s_1, action, prob, reward, r_i, done):
-        self.memory.store_memory(state, s_1, action, prob, reward, r_i, done)
+    def store_memory(self, state, s_1, action, prob, reward, done):
+        self.memory.store_memory(state, s_1, action, prob, reward, done)
 
-    def calculate_adv_ret(self, state, state_1, reward, done, ext=True):
+    def calculate_adv_ret(self, state, state_1, reward, done):
         with torch.no_grad():
-            if ext:
-                value, _ = self.critic(state)
-                value_1, _ = self.critic(state_1)
-                gamma = self.gamma_e
-            else:
-                _, value = self.critic(state)
-                _, value_1 = self.critic(state_1)
-                gamma = self.gamma_i
-            
+
+            value = self.critic(state)
+            value_1 = self.critic(state_1)
+            gamma = self.gamma_e
             
             delta = reward + gamma * value_1 - value
             delta = delta.cpu().flatten().numpy()
@@ -184,53 +158,35 @@ class Agent():
             adv = (adv - adv.mean()) / (adv.std()+1e-4)
         return adv, returns
 
-    def intrinsic_reward(self, state): 
-        # Normalize the next_state obs
-        stae = np.clip((state - self.obs_rms.mean)/ self.obs_rms.var, -5, 5)
-        state = torch.tensor([state], dtype=torch.float, device=self.rnd.device)
-        predict, target = self.rnd(state)
-        int_reward = (predict - target).pow(2).mean(1).cpu().detach().numpy()
-        return int_reward
 
-    def train(self):
-        epochs = 5
+    def train(self, step):
             
-        state_mem, state_1_mem, action_mem, prob_mem, reward_mem, r_i_mem, done_mem = self.memory.get_memory()
+        state_mem, state_1_mem, action_mem, prob_mem, reward_mem, done_mem = self.memory.get_memory()
+
+        # Normalize the rewards
+        self.rwd_mtd.update(reward_mem)
+        approx_kl_divs, entorpy_losses, policy_losses, critiC_losses = [], [], [], []
+        reward_mem_norm = (reward_mem - self.rwd_mtd.mean) / (np.sqrt(self.rwd_mtd.var) + 1e-4)
+
         states = torch.tensor(state_mem, dtype=torch.float, device=self.actor.device)
         states_1 = torch.tensor(state_1_mem, dtype=torch.float, device=self.actor.device)
         actions = torch.tensor(action_mem, dtype=torch.float, device=self.actor.device)
         old_probs = torch.tensor(prob_mem, dtype=torch.float, device=self.actor.device)
-        rewards = torch.tensor(reward_mem, dtype=torch.float, device=self.actor.device)
-        r_i = torch.tensor(r_i_mem, dtype=torch.float, device=self.actor.device)
+        rewards = torch.tensor(reward_mem_norm, dtype=torch.float, device=self.actor.device)
 
+        advantage, returns = self.calculate_adv_ret(states, states_1, rewards, done_mem)
 
-        advantage, returns = self.calculate_adv_ret(states, states_1, rewards, done_mem, ext=True)
-        advantage_int, returns_int = self.calculate_adv_ret(states, states_1, r_i, done_mem, ext=False)
+        for epoch in range(self.epoch):
 
-        advantage = advantage + advantage_int
-
-        forward_mse = torch.nn.MSELoss(reduction='none')
-
-        for epoch in range(epochs):
-            # batches = self.memory.get_batches()
             for batch in BatchSampler(RandomSampler(range(len(self.memory.state))), self.batch_size, False):
-            # for batch in batches:
 
                 # calculate r_t(theta)
                 state = states[batch]
                 old_prob = old_probs[batch]
                 action = actions[batch]
 
-                # for Curiosity-driven(Random Network Distillation)
-                predict_next_state_feature, target_next_state_feature = self.rnd(states_1[batch])
-                forward_loss = forward_mse(predict_next_state_feature, target_next_state_feature.detach()).mean(-1)
-                # Proportion of exp used for predictor update
-                mask = torch.rand(len(forward_loss)).to(self.rnd.device)
-                mask = (mask < 0.25).type(torch.FloatTensor).to(self.rnd.device)
-                forward_loss = (forward_loss * mask).sum() / torch.max(mask.sum(), torch.Tensor([1]).to(self.rnd.device))
-
-                dist_new = self.actor(states)
-                entropy = dist_new.entropy().sum(1, keepdims=True)
+                dist_new = self.actor.get_dist(state)
+                entropy = dist_new.entropy()
                 prob_new = dist_new.log_prob(action)
 
                 r_t = (prob_new.sum(1, keepdims=True) - old_prob.sum(1, keepdims=True)).exp()        
@@ -240,31 +196,37 @@ class Agent():
                 weight_prob = advantage[batch] * r_t
 
                 actor_loss = -torch.min(weight_prob, prob_clip)
-                actor_loss = (actor_loss - entropy * self.c1).mean()
+                actor_loss = (actor_loss + entropy * self.c1).mean()
 
-                # self.actor.optim.zero_grad()
-                # actor_loss.mean().backward()
-                # self.actor.optim.step()
+                entropy_loss = entropy.mean()
+                entorpy_losses.append(entropy_loss.item())
+                policy_losses.append(actor_loss.item())
 
+                self.optimizer_actor.zero_grad()
+                actor_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 40)
+                self.optimizer_actor.step()
 
                 # critic loss
-                value_ext, value_int = self.critic(state)
-                
-                critic_ext_loss = F.mse_loss(returns[batch], value_ext)
-                critic_int_loss = F.mse_loss(returns_int[batch], value_int)
+                value = self.critic(state)
+                critic_loss = F.mse_loss(returns[batch], value)
+                critiC_losses.append(critic_loss.item())
 
-                critic_loss = critic_ext_loss + critic_int_loss
+                self.optimizer_critic.zero_grad()
+                critic_loss.backward()
+                self.optimizer_critic.step()
 
-                # self.critic.optim.zero_grad()
-                # critic_loss.backward()
-                # self.critic.optim.step()
+                with torch.no_grad():
+                    log_ratio = prob_new - old_prob
+                    approx_kl_div = torch.mean((torch.exp(log_ratio) - 1) - log_ratio).cpu().numpy()
+                    approx_kl_divs.append(approx_kl_div)
 
-                total_loss = 0.5 * critic_loss + actor_loss + forward_loss
-                total_loss.backward()
-                # self.global_grad_norm_(list(self.actor.parameters())+list(self.critic.critic_ext.parameters()) +\
-                #                   list(self.critic.critic_int.parameters()) +\
-                #                   list(self.rnd.predictor.parameters()))
-                self.optimizer.step()
+        self.writer.add_scalar('train/actor_loss',np.mean(policy_losses), step)
+        self.writer.add_scalar('train/critic_loss', np.mean(critiC_losses), step)
+        self.writer.add_scalar('train/entropy_loss', np.mean(entorpy_losses), step)
+        self.writer.add_scalar('train/kl_div', np.mean(approx_kl_divs), step)
+
+
 
         self.memory.clear_memory()
 
@@ -272,7 +234,6 @@ class Agent():
         print(f'Saving Models')
         torch.save(self.actor.state_dict(), self.save_dir+'_actor.ckpt')
         torch.save(self.critic.state_dict(), self.save_dir+'_critic.ckpt')
-        torch.save(self.rnd.state_dict(), self.save_dir+'_rnd.ckpt')
 
 
     def global_grad_norm_(self, parameters, norm_type=2):

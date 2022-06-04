@@ -14,7 +14,7 @@ class Flatten(nn.Module):
         return x.view(batch_size, -1)
 
 class Actor(torch.nn.Module):
-    def __init__(self, num_state, num_actions, layer_1, layer_2, lr=0.0001, checkpt='ppo',
+    def __init__(self, num_state, num_actions, layer_1, lr=0.0001, checkpt='ppo',
                  contineous=True):
         super(Actor, self).__init__()
 
@@ -62,12 +62,11 @@ class Actor(torch.nn.Module):
 
 
 class Critic(torch.nn.Module):
-    def __init__(self, num_state, layer_1, layer_2, lr=0.0001, checkpt='ppo', contineous=False):
+    def __init__(self, num_state, layer_1, lr=0.0001, checkpt='ppo', contineous=False):
         super(Critic, self).__init__()
 
         self.nam_state = num_state
         self.layer_1 = layer_1
-        self.layer_2 = layer_2
         self.chkpt = checkpt + '_critic.ckpt'
         self.contienous = contineous
 
@@ -108,26 +107,8 @@ class ActorCNN(torch.nn.Module):
                 self.conv3 = nn.Conv2d(in_channels=64,out_channels=64,kernel_size=2, stride=1)
                 self.flat = Flatten()
                 self.fc1 = nn.Linear(5184,layer_1)
-                self.fc2 = nn.Linear(layer_1,layer_2)
-                self.mean = nn.Linear(layer_2, num_actions)
-                self.std = nn.Linear(layer_2, num_actions)
-
-        else:
-            self.model = nn.Sequential(
-                nn.Conv2d(in_channels=3, out_channels=32, kernel_size=8, stride=4),
-                nn.ReLU(),
-                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=1),
-                nn.ReLU(),
-                nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1),
-                nn.ReLU(),
-                Flatten(),
-                # nn.Linear(12 * 12 * 64,layer_1),
-                nn.Linear(7*7*64,256),
-                nn.ReLU(),
-                nn.Linear(256,448),
-                nn.ReLU(),
-                nn.Linear(layer_2, num_actions),
-            )
+                self.mean = nn.Linear(layer_1, num_actions)
+                self.std = nn.Linear(layer_1, num_actions)
 
 
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -135,22 +116,21 @@ class ActorCNN(torch.nn.Module):
 
 
     def forward(self,state):
-        if self.contineous:
-            x = F.relu(self.conv1(state))
-            x = F.relu(self.conv2(x))
-            x = F.relu(self.conv3(x))
-            x = self.flat(x)
-            x = torch.tanh(self.fc1(x))
-            x = torch.tanh(self.fc2(x))
+        x = F.relu(self.conv1(state))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        x = self.flat(x)
+        x = torch.tanh(self.fc1(x))
 
-            mean = torch.tanh(self.mean(x))
-            std_dev = F.softmax(self.std(x),dim=-1)
-            dist = Normal(mean, std_dev)
-            return dist
+        mean = torch.tanh(self.mean(x))
+        std_dev = F.softplus(self.std(x)) + 1.0
+        return mean, std_dev
 
-        else:
-            pol = torch.softmax(self.model(state))
-            return Categorical(pol)
+
+    def get_dist(self, state):
+        mean, std_dev = self.forward(state)
+        dist = Normal(mean, std_dev)
+        return dist
 
 
 class CriticCNN(torch.nn.Module):
@@ -164,21 +144,6 @@ class CriticCNN(torch.nn.Module):
         img_size= 96*96*3
 
         self.critic_ext = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=4),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=64,out_channels=64,kernel_size=3, stride=1),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(4096, layer_1),
-            nn.ReLU(),
-            nn.Linear(layer_1,layer_2),
-            nn.ReLU(),
-            nn.Linear(layer_2, 1)
-        )
-
-        self.critic_int = nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=4),
             nn.ReLU(),
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2),
@@ -209,8 +174,7 @@ class CriticCNN(torch.nn.Module):
 
     def forward(self,state):
         ext_val = self.critic_ext(state)
-        int_val = self.critic_int(state)
-        return ext_val, int_val
+        return ext_val
 
 
 class RND(torch.nn.Module):
